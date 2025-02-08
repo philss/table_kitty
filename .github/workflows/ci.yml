@@ -32,11 +32,7 @@ jobs:
 
       - run: mix deps.get
       - run: mix deps.compile
-      - name: Run tests
-        run: mix test --warnings-as-errors
-      - name: Run property tests
-        run: |
-          mix test --only property --warnings-as-errors
+      - run: mix test --warnings-as-errors
 
   format:
     runs-on: ubuntu-latest

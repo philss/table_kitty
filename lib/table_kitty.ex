@@ -193,7 +193,7 @@ defmodule TableKitty do
       |> Enum.zip(normalized_columns)
       |> Map.new()
 
-    max_lenghts =
+    max_lengths =
       Map.new(columns_to_normalized, fn {column, normalized} ->
         {_, max_len} = Enum.max_by(normalized, fn {_, length} -> length end)
         {column, max_len}
@@ -205,8 +205,8 @@ defmodule TableKitty do
     {normalized, max_column_lengths, _total_rows} =
       reader
       |> Table.to_rows()
-      |> Enum.reduce({[], max_lenghts, 0}, fn row, {acc, current_max_acc, row_index} ->
-        new_row_with_lenghts =
+      |> Enum.reduce({[], max_lengths, 0}, fn row, {acc, current_max_acc, row_index} ->
+        new_row_with_lengths =
           Map.new(row, fn {key, value} ->
             context = %{context: :row, value: value, column: key, row_index: row_index, meta: []}
             formatted = formatter.(context, opts)
@@ -233,14 +233,14 @@ defmodule TableKitty do
 
         new_max_sizes =
           Map.new(current_max_acc, fn {key, current_max} ->
-            row = Map.fetch!(new_row_with_lenghts, key)
+            row = Map.fetch!(new_row_with_lengths, key)
 
             {_, row_length} = Enum.max_by(row, fn {_, length} -> length end)
 
             {key, max(current_max, row_length)}
           end)
 
-        {[new_row_with_lenghts | acc], new_max_sizes, row_index + 1}
+        {[new_row_with_lengths | acc], new_max_sizes, row_index + 1}
       end)
 
     normalized = Enum.reverse(normalized)

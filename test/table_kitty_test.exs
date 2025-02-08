@@ -29,6 +29,18 @@ defmodule TableKittyTest do
              """
     end
 
+    test "returns an error with empty data" do
+      assert {:error, error} =
+               TableKitty.build([])
+
+      assert ArgumentError.message(error) == "expected non-empty tabular data, but got: []"
+
+      assert {:error, error} =
+               TableKitty.build([%{}])
+
+      assert ArgumentError.message(error) == "expected non-empty tabular data, but got: [%{}]"
+    end
+
     test "returns a printable IO data fitting to the header size" do
       assert {:ok, printable} =
                TableKitty.build([%{"aaaa" => "1", "bb" => "2"}, %{"aaaa" => "42", "bb" => "6"}])
@@ -41,6 +53,40 @@ defmodule TableKittyTest do
              +------+----+
              | 42   | 6  |
              +------+----+
+             """
+    end
+
+    test "returns a printable IO data following column ordering" do
+      assert {:ok, printable} =
+               TableKitty.build([%{"aaaa" => "1", "bb" => "2"}, %{"aaaa" => "42", "bb" => "6"}],
+                 columns: ["bb", "aaaa"]
+               )
+
+      assert IO.iodata_to_binary(printable) == """
+             +----+------+
+             | bb | aaaa |
+             +====+======+
+             | 2  | 1    |
+             +----+------+
+             | 6  | 42   |
+             +----+------+
+             """
+    end
+
+    test "returns a printable IO data displaying only one column" do
+      assert {:ok, printable} =
+               TableKitty.build([%{"aaaa" => "1", "bb" => "2"}, %{"aaaa" => "42", "bb" => "6"}],
+                 columns: ["bb"]
+               )
+
+      assert IO.iodata_to_binary(printable) == """
+             +----+
+             | bb |
+             +====+
+             | 2  |
+             +----+
+             | 6  |
+             +----+
              """
     end
 
@@ -713,6 +759,55 @@ defmodule TableKittyTest do
              |      |  131 |
              |      | >>   |
              +------+------+
+             """
+    end
+
+    test "returns a printable IO data with only headers" do
+      assert {:ok, printable} =
+               TableKitty.build(a: [], b: [])
+
+      assert IO.iodata_to_binary(printable) == """
+             +---+---+
+             | a | b |
+             +===+===+
+             +---+---+
+             """
+    end
+
+    test "returns a printable IO data with only headers and title" do
+      assert {:ok, printable} =
+               TableKitty.build([a: [], b: []], title: "This is an empty table")
+
+      assert IO.iodata_to_binary(printable) == """
+             +------------------------+
+             | This is an empty table |
+             +------------+-----------+
+             | a          | b         |
+             +============+===========+
+             +------------+-----------+
+             """
+
+      assert {:ok, printable} =
+               TableKitty.build([a: [], b: []], title: "This is an empty table", headers: false)
+
+      assert IO.iodata_to_binary(printable) == """
+             +------------------------+
+             | This is an empty table |
+             +------------+-----------+
+             +------------+-----------+
+             """
+
+      assert {:ok, printable} =
+               TableKitty.build([a: []],
+                 title: "This is an empty table",
+                 headers: false,
+                 display_bottom_border: false
+               )
+
+      assert IO.iodata_to_binary(printable) == """
+             +------------------------+
+             | This is an empty table |
+             +------------------------+
              """
     end
   end

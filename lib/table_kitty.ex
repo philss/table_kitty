@@ -66,6 +66,7 @@ defmodule TableKitty do
       Keyword.validate!(opts,
         title: nil,
         headers: %{},
+        columns: nil,
         line_separator: "-",
         column_separator: "|",
         outer_border: "|",
@@ -91,16 +92,28 @@ defmodule TableKitty do
         {:error,
          ArgumentError.exception("expected valid tabular data, but got: #{inspect(tabular)}")}
 
+      {_reader_type, %{columns: []}, _enum} ->
+        {:error,
+         ArgumentError.exception("expected non-empty tabular data, but got: #{inspect(tabular)}")}
+
       {reader_type, %{columns: columns}, _enum} = reader ->
         custom_headers = Keyword.fetch!(opts, :headers)
+        select_columns = Keyword.fetch!(opts, :columns)
+
+        columns =
+          if is_list(select_columns) and not Enum.empty?(select_columns) do
+            select_columns
+          else
+            columns
+          end
 
         with {:ok, normalized_columns} <- normalize_columns(columns, custom_headers, opts) do
           case reader_type do
             :rows ->
-              render_by_rows(reader, normalized_columns, opts)
+              render_by_rows(reader, columns, normalized_columns, opts)
 
             :columns ->
-              render_by_columns(reader, normalized_columns, opts)
+              render_by_columns(reader, columns, normalized_columns, opts)
           end
         end
     end
@@ -185,9 +198,7 @@ defmodule TableKitty do
     end)
   end
 
-  defp render_by_rows(reader, normalized_columns, opts) do
-    {_, %{columns: columns}, _} = reader
-
+  defp render_by_rows(reader, columns, normalized_columns, opts) do
     columns_to_normalized =
       columns
       |> Enum.zip(normalized_columns)
@@ -271,7 +282,8 @@ defmodule TableKitty do
 
             result =
               if rest > 0 do
-                {shorter_col, value} = Enum.min_by(map, fn {_k, v} -> v end)
+                ordered_cols = Enum.map(columns, fn col -> {col, map[col]} end)
+                {shorter_col, value} = Enum.min_by(ordered_cols, fn {_k, v} -> v end)
                 Map.put(map, shorter_col, value + rest)
               else
                 map
@@ -492,8 +504,8 @@ defmodule TableKitty do
   defp align_content(col, alignments) when is_map(alignments),
     do: Map.get(alignments, col, :left)
 
-  defp render_by_columns(reader, normalized_columns, opts) do
+  defp render_by_columns(reader, columns, normalized_columns, opts) do
     # OPTIMIZE: implement the traverse by columns.
-    render_by_rows(reader, normalized_columns, opts)
+    render_by_rows(reader, columns, normalized_columns, opts)
   end
 end

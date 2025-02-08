@@ -3,7 +3,7 @@
 A library to generate text-based tables in Elixir.
 
 It's similar to [`TableRex`](https://github.com/djm/table_rex), but
-most of the API is based in options for the `TableKitty.render/2` function.
+most of the API is based on options for the `TableKitty.build/2` function.
 
 The tabular data must implement the `Table.Reader` protocol. This is already
 available for data that is a map of columns or a list of rows (list of maps).
@@ -27,7 +27,7 @@ be found at <https://hexdocs.pm/table_kitty>.
 
 ## License
 
-Copyright (C) 2024 Philip Sampaio Silva
+Copyright (C) 2025 Philip Sampaio Silva
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

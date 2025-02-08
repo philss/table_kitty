@@ -1,0 +1,50 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+env:
+  MIX_ENV: test
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          - otp_version: 25.3
+            elixir_version: 1.14
+
+          - otp_version: "27.2"
+            elixir_version: 1.18
+
+    runs-on: ubuntu-latest
+    name: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp_version }}
+          elixir-version: ${{ matrix.elixir_version }}
+
+      - run: mix deps.get
+      - run: mix deps.compile
+      - name: Run tests
+        run: mix test --warnings-as-errors
+      - name: Run property tests
+        run: |
+          mix test --only property --warnings-as-errors
+
+  format:
+    runs-on: ubuntu-latest
+    name: mix format
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.2"
+          elixir-version: 1.18
+      - run: mix format --check-formatted

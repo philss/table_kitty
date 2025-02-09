@@ -11,20 +11,91 @@
 # limitations under the License.
 defmodule TableKitty do
   @moduledoc """
-  Documentation for `TableKitty`.
-  """
+  `TableKitty` prints text-based tables based on tabular data.
 
-  @doc """
-  Print the table if the same is valid.
+  Tabular data means that we expect something that is a row-based
+  or a column-based table. In fact we expect the data to implement
+  the `Table.Reader` protocol. This is already implemented for
+  lists and maps. See the [table package](https://hex.pm/packages/table)
+  on Hex.pm to discover the libs that implement this protocol.
 
-  To see options go to `build/2`.
+  The main function is `build/2` that is going to return a result
+  with an IO data if successful. IO data has the advantage over
+  strings because it will postpone the construction of the final
+  string. You can use `IO.iodata_to_binary/1` to get a string out of it.
+
+  For a simple print, there are `print/2` and `TableKitty.inspect/2`.
+  The first one will print and return `:ok` or will return `{:error, exception}`.
+  And the second will print and return the given tabular data or
+  will raise an error.
+
+  ## Examples
+
+      iex> data = [city: ["Tokyo", "Delhi", "Shanghai", "São Paulo", "Mexico City"], pop: [37, 28, 25, 21, 21]]
+      iex> io_data = TableKitty.build!(data, title: "Largest cities", headers: %{pop: "Population in millions"})
+      iex> IO.iodata_to_binary(io_data)
+      \"\"\"
+      +--------------------------------------+
+      |            Largest cities            |
+      +-------------+------------------------+
+      | city        | Population in millions |
+      +=============+========================+
+      | Tokyo       | 37                     |
+      +-------------+------------------------+
+      | Delhi       | 28                     |
+      +-------------+------------------------+
+      | Shanghai    | 25                     |
+      +-------------+------------------------+
+      | São Paulo   | 21                     |
+      +-------------+------------------------+
+      | Mexico City | 21                     |
+      +-------------+------------------------+
+      \"\"\"
+
+      iex> data = [city: ["Tokyo", "Delhi", "Shanghai", "São Paulo", "Mexico City"], pop: [37, 28, 25, 21, 21]]
+      iex> io_data = TableKitty.build!(data, display_horizontal_divisor: false)
+      iex> IO.iodata_to_binary(io_data)
+      \"\"\"
+      +-------------+-----+
+      | city        | pop |
+      +=============+=====+
+      | Tokyo       | 37  |
+      | Delhi       | 28  |
+      | Shanghai    | 25  |
+      | São Paulo   | 21  |
+      | Mexico City | 21  |
+      +-------------+-----+
+      \"\"\"
+
+  It's possible to have a colorful output. For that, you will need a `styler`:
+
+      iex> styler = fn
+      ...>   %{context: :row, original_value: orig, value: value}, _opts when is_number(orig) ->
+      ...>     cond do
+      ...>       orig >= 30 -> IO.ANSI.format([:red, :bright, value])
+      ...>       orig >= 25 -> IO.ANSI.format([:yellow, :bright, value])
+      ...>       true -> IO.ANSI.format([:green, :bright, value])
+      ...>     end
+      ...>   context, _opts ->
+      ...>     context[:value]
+      ...> end
+      iex> data = [city: ["Tokyo", "Delhi", "Shanghai", "São Paulo", "Mexico City"], pop: [37, 28, 25, 21, 21]]
+      iex> io_data = TableKitty.build!(data, display_horizontal_divisor: false, styler: styler)
+      iex> IO.iodata_to_binary(io_data)
+      \"\"\"
+      +-------------+-----+
+      | city        | pop |
+      +=============+=====+
+      | Tokyo       | \e[31m\e[1m37\e[0m  |
+      | Delhi       | \e[33m\e[1m28\e[0m  |
+      | Shanghai    | \e[33m\e[1m25\e[0m  |
+      | São Paulo   | \e[32m\e[1m21\e[0m  |
+      | Mexico City | \e[32m\e[1m21\e[0m  |
+      +-------------+-----+
+      \"\"\"
+
   """
-  @spec print(Table.Reader.t(), Keyword.t()) :: :ok | {:error, Exception.t()}
-  def print(tabular, opts \\ []) do
-    with {:ok, printable} <- build(tabular, opts) do
-      IO.puts(printable)
-    end
-  end
+  import Kernel, except: [inspect: 1, inspect: 2]
 
   @doc """
   Builds IO data with a "ready to print" table.
@@ -146,9 +217,8 @@ defmodule TableKitty do
 
   * `:outer_border` - the character for the body around the table. Default is `|`.
 
-  * `:line_separator` - the character used in the vertical divisor and top and bottom
-    lines. It is `"-"` by default. In case `:display_horizontal_divisor` is false, this
-    option will be ignored.
+  * `:line_separator` - the character used in the horizontal divisor and top and bottom
+    lines. It is `"-"` by default.
 
   * `:column_separator` - the character used for separating each cell vertically.
     Defaults to `"|"`.
@@ -242,11 +312,15 @@ defmodule TableKitty do
     case Table.Reader.init(tabular) do
       :none ->
         {:error,
-         ArgumentError.exception("expected valid tabular data, but got: #{inspect(tabular)}")}
+         ArgumentError.exception(
+           "expected valid tabular data, but got: #{Kernel.inspect(tabular)}"
+         )}
 
       {_reader_type, %{columns: []}, _enum} ->
         {:error,
-         ArgumentError.exception("expected non-empty tabular data, but got: #{inspect(tabular)}")}
+         ArgumentError.exception(
+           "expected non-empty tabular data, but got: #{Kernel.inspect(tabular)}"
+         )}
 
       {reader_type, %{columns: columns}, _enum} = reader ->
         custom_headers = Keyword.fetch!(opts, :headers)
@@ -311,7 +385,7 @@ defmodule TableKitty do
             {:halt,
              {:error,
               ArgumentError.exception(
-                "a custom header should be converted into a valid string by the formatter, got: #{inspect(formatted)}"
+                "a custom header should be converted into a valid string by the formatter, got: #{Kernel.inspect(formatted)}"
               )}}
           end
         else
@@ -325,7 +399,7 @@ defmodule TableKitty do
             {:halt,
              {:error,
               ArgumentError.exception(
-                "a header should be converted into a valid string by the formatter, got: #{inspect(formatted)}"
+                "a header should be converted into a valid string by the formatter, got: #{Kernel.inspect(formatted)}"
               )}}
           end
         end
@@ -670,5 +744,32 @@ defmodule TableKitty do
   defp render_by_columns(reader, columns, normalized_columns, opts) do
     # OPTIMIZE: implement the traverse by columns.
     render_by_rows(reader, columns, normalized_columns, opts)
+  end
+
+  @doc """
+  Prints the table if the same is valid.
+
+  To see all the options, go to `build/2`.
+
+  In case the tabular needs to be returned, use `TableKitty.inspect/2`.
+  """
+  @spec print(Table.Reader.t(), Keyword.t()) :: :ok | {:error, Exception.t()}
+  def print(tabular, opts \\ []) do
+    with {:ok, printable} <- build(tabular, opts) do
+      IO.puts(printable)
+    end
+  end
+
+  @doc """
+  Prints the tabular data and return itself.
+
+  In case of error, an exception will be raised.
+  To see all the options, go to `build/2`.
+  """
+  @spec inspect(Table.Reader.t(), Keyword.t()) :: Table.Reader.t()
+  def inspect(tabular, opts \\ []) do
+    io_data = build!(tabular, opts)
+    :ok = IO.puts(io_data)
+    tabular
   end
 end

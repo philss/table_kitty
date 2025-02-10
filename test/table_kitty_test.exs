@@ -151,7 +151,8 @@ defmodule TableKittyTest do
     test "returns a printable IO data with a header shorter than columns" do
       assert {:ok, printable} =
                TableKitty.build([%{"a" => "1", "b" => "2"}, %{"a" => "42", "b" => "6"}],
-                 title: "tb"
+                 title: "tb",
+                 align_title: :left
                )
 
       assert IO.iodata_to_binary(printable) == """
@@ -523,14 +524,14 @@ defmodule TableKittyTest do
              """
     end
 
-    test "returns a printable IO without vertical divisors" do
+    test "returns a printable IO without horizontal divisors" do
       assert {:ok, printable} =
                TableKitty.build(
                  %{
                    "name" => ["Ana", "Bob", "John"],
                    "rate" => [5.0, 4.35, 4.75]
                  },
-                 display_vertical_divisor: false
+                 display_horizontal_divisor: false
                )
 
       assert IO.iodata_to_binary(printable) == """

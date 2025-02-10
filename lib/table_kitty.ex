@@ -11,27 +11,227 @@
 # limitations under the License.
 defmodule TableKitty do
   @moduledoc """
-  Documentation for `TableKitty`.
+  `TableKitty` prints text-based tables based on tabular data.
+
+  Tabular data means that we expect something that is a row-based
+  or a column-based table. In fact we expect the data to implement
+  the `Table.Reader` protocol. This is already implemented for
+  lists and maps. See the [table package](https://hex.pm/packages/table)
+  on Hex.pm to discover the libs that implement this protocol.
+
+  The main function is `build/2` that is going to return a result
+  with an IO data if successful. IO data has the advantage over
+  strings because it will postpone the construction of the final
+  string. You can use `IO.iodata_to_binary/1` to get a string out of it.
+
+  For a simple print, there are `print/2` and `TableKitty.inspect/2`.
+  The first one will print and return `:ok` or will return `{:error, exception}`.
+  And the second will print and return the given tabular data or
+  will raise an error.
+
+  ## Examples
+
+      iex> data = [city: ["Tokyo", "Delhi", "Shanghai", "São Paulo", "Mexico City"], pop: [37, 28, 25, 21, 21]]
+      iex> io_data = TableKitty.build!(data, title: "Largest cities", headers: %{pop: "Population in millions"})
+      iex> IO.iodata_to_binary(io_data)
+      \"\"\"
+      +--------------------------------------+
+      |            Largest cities            |
+      +-------------+------------------------+
+      | city        | Population in millions |
+      +=============+========================+
+      | Tokyo       | 37                     |
+      +-------------+------------------------+
+      | Delhi       | 28                     |
+      +-------------+------------------------+
+      | Shanghai    | 25                     |
+      +-------------+------------------------+
+      | São Paulo   | 21                     |
+      +-------------+------------------------+
+      | Mexico City | 21                     |
+      +-------------+------------------------+
+      \"\"\"
+
+  This one is a "lighter" version of the above:
+
+      iex> data = [city: ["Tokyo", "Delhi", "Shanghai", "São Paulo", "Mexico City"], pop: [37, 28, 25, 21, 21]]
+      iex> io_data = TableKitty.build!(data, display_horizontal_divisor: false)
+      iex> IO.iodata_to_binary(io_data)
+      \"\"\"
+      +-------------+-----+
+      | city        | pop |
+      +=============+=====+
+      | Tokyo       | 37  |
+      | Delhi       | 28  |
+      | Shanghai    | 25  |
+      | São Paulo   | 21  |
+      | Mexico City | 21  |
+      +-------------+-----+
+      \"\"\"
+
+  It's possible to have a colorful output. For that, you will need a `styler`:
+
+      styler = fn
+        %{context: :row, original_value: orig, value: value}, _opts when is_number(orig) ->
+          color =
+            cond do
+              orig >= 30 -> :red
+              orig >= 25 -> :yellow
+              true -> :green
+            end
+
+          IO.ANSI.format([color, :bright, value])
+        context, _opts ->
+          context[:value]
+      end
+
+      data = [city: ["Tokyo", "Delhi", "Shanghai", "São Paulo", "Mexico City"], pop: [37, 28, 25, 21, 21]]
+      io_data = TableKitty.build!(data, display_horizontal_divisor: false, styler: styler)
+
+      \# Note that the output will depend on your terminal.
+      IO.iodata_to_binary(io_data)
+      \"\"\"
+      +-------------+-----+
+      | city        | pop |
+      +=============+=====+
+      | Tokyo       | \e[31m\e[1m37\e[0m  |
+      | Delhi       | \e[33m\e[1m28\e[0m  |
+      | Shanghai    | \e[33m\e[1m25\e[0m  |
+      | São Paulo   | \e[32m\e[1m21\e[0m  |
+      | Mexico City | \e[32m\e[1m21\e[0m  |
+      +-------------+-----+
+      \"\"\"
+
   """
+  import Kernel, except: [inspect: 1, inspect: 2]
 
   @doc """
-  Print the table if the same is valid.
-
-  To see options go to `build/2`.
-  """
-  @spec print(Table.Reader.t(), Keyword.t()) :: :ok | {:error, Exception.t()}
-  def print(tabular, opts \\ []) do
-    with {:ok, printable} <- build(tabular, opts) do
-      IO.puts(printable)
-    end
-  end
-
-  @doc """
-  Builds IO data with the generated table.
+  Builds IO data with a "ready to print" table.
 
   This function receives a valid tabular data, like a list
   of maps, or a keyword list with keys as column names and values as
   list of values for each column.
+
+  It may return an error. For a version that raises when
+  enconters an error, see `build!/2`.
+
+  To directly print your table, try `print/2`.
+
+  ## Options
+
+  Most of the options can affect the way the table is displayed, but some
+  of them can change the data that will be seen in the screen.
+
+  * `:title` - A title that is placed above the headers.
+    Default is `nil`, which means no title is going to be rendered.
+    This value needs to be a printable string.
+
+  * `:headers` - A map that controls the text a column name is going to
+    have when displayed in the headers line. Defaults to `%{}`.
+
+  * `:columns` - A list of columns to display, in the desired ordering.
+    By default this is `nil`, which is going to render all columns following
+    an unpredictable ordering, although most of the time the order is the same.
+    The column names must match the original column names, and not the ones
+    configured by the `:headers` option.
+
+  * `:formatter` - A function that can change the text to be rendered. It
+    receives a `context` as a map in the first argument, and all the `options`
+    in the second argument. It must return a `String.t()` with only printable
+    characters, and no ANSI escaping - see the `:styler` option for this.
+
+    By default, this is the `TableKitty.DefaultFormatter.format/2` function.
+    You can implement your own, but it's recommended to have a default "clause"
+    calling that function, as it knows how to pretty-print Elixir terms, including
+    how to display multiline content.
+
+    The `context` map can have information to help decide how the text will
+    be formatted. The following keys are guaranteed to be in the map:
+
+    * `:context` - where this text is in. Can be `:header` or `:row`.
+
+    * `:value` - the actual value. In the case of a header, this is the
+      column name or custom header.
+
+    * `:column` - the column name that this context belongs. This is the
+      original column name.
+
+    * `:meta` - a list with some metadata. For headers, it can say if the
+      header is a custom one.
+
+    For a `:row` context, there is a field with the row index called `:row_index`.
+
+  * `:styler` - A function that can change the style of the text, including changing
+    colors. It is recommended for when you need to work with `IO.ANSI` escaping.
+
+    This function receives a context, similar to the one for the formatter, and
+    all the options. It returns an IO data, as well as a string.
+
+    The default implementation only returns the `:value` field from a `context`.
+
+    Speaking of `context`, this one is similar to the one from `:formatter`, but
+    has more details. First, the `:value` field can be only one line of the formatted
+    content. This is because the content of a row will be splitted into multiple
+    lines.
+
+    The following keys are available for the `:styler` function:
+
+    * `:formatted` - the formatted text, which is the full/multiline text. It
+      can be different from `:value` because may be a substring.
+
+    * `:original_value` - the value before formatting.
+
+    * `:row_line` - the row line in the context of that same row.
+
+  ### Visuals
+
+  The following options are responsible for controlling the visual aspects of
+  the table:
+
+  * `:align_title` - controls the title alignment. Defaults to `:center`
+
+  * `:align_headers` - controls the alignment of all headers at once, or individual
+    headers. This means that this option can be both an atom, or a map of column
+    names and atoms. Defaults to `:left`.
+
+  * `:align_content` - it has the same behaviour of `:align_headers`, but for content.
+    Defaults to `:left`.
+
+  * `:padding_left` - controls the spacing on the left side of the content.
+    Padding is filled with empty spaces. Defaults to `1`.
+
+  * `:padding_right` - controls the spacing on the right side of the content.
+    Defaults to `1`.
+
+  * `:display_top_border` - controls if the top border should be rendered.
+    Default is `true`.
+
+  * `:display_bottom_border` - controls if the bottom border should be rendered.
+    Default is `true`.
+
+  * `:display_horizontal_divisor` - controls lines dividing the content lines
+    should be rendered. Defaults to `true`.
+
+  ### Characters
+
+  And the rest of the configuration is controlling characters used to give
+  a certain style to the table.
+
+  * `:junction` - the corners of each cell. Defaults to `"+"`.
+
+  * `:blank_space` - the character for the spaces of padding and alignments.
+    This is useful to configure if you want to see the different spaces present
+    in the content. By default this is an empty space `" "`.
+
+  * `:outer_border` - the character for the body around the table. Default is `|`.
+
+  * `:line_separator` - the character used in the horizontal divisor and top and bottom
+    lines. It is `"-"` by default.
+
+  * `:column_separator` - the character used for separating each cell vertically.
+    Defaults to `"|"`.
+
+  * `:header_line_separator` - it's similar to `:line_separator`, but is `"="` by default.
 
   ## Examples
 
@@ -59,6 +259,36 @@ defmodule TableKitty do
       +---+---+
       \"\"\"
 
+      iex> {:ok, iodata} = TableKitty.build([%{a: 1, b: 4}, %{a: 2, b: 6}], columns: [:b, :a])
+      iex> IO.iodata_to_binary(iodata)
+      \"\"\"
+      +---+---+
+      | b | a |
+      +===+===+
+      | 4 | 1 |
+      +---+---+
+      | 6 | 2 |
+      +---+---+
+      \"\"\"
+
+      iex> {:ok, iodata} = TableKitty.build([a: [1, 2], b: [4, 6]], title: "table title")
+      iex> IO.iodata_to_binary(iodata)
+      \"\"\"
+      +-------------+
+      | table title |
+      +------+------+
+      | a    | b    |
+      +======+======+
+      | 1    | 4    |
+      +------+------+
+      | 2    | 6    |
+      +------+------+
+      \"\"\"
+
+      iex> {:error, error} = TableKitty.build([])
+      iex> error
+      %ArgumentError{message: "expected non-empty tabular data, but got: []"}
+
   """
   @spec build(Table.Reader.t(), Keyword.t()) :: {:ok, IO.chardata()} | {:error, Exception.t()}
   def build(tabular, opts \\ []) do
@@ -67,34 +297,38 @@ defmodule TableKitty do
         title: nil,
         headers: %{},
         columns: nil,
+        junction: "+",
+        blank_space: " ",
+        outer_border: "|",
         line_separator: "-",
         column_separator: "|",
-        outer_border: "|",
-        junction: "+",
         header_line_separator: "=",
         padding_left: 1,
         padding_right: 1,
+        align_title: :center,
         align_headers: :left,
-        align_title: :left,
         align_content: :left,
         display_top_border: true,
         display_bottom_border: true,
-        display_vertical_divisor: true,
+        display_horizontal_divisor: true,
         # Custom opts are for when user wants to send down special opts for the formatter/styler.
         custom_opts: [],
         formatter: &TableKitty.DefaultFormatter.format/2,
-        styler: fn context, _opts -> Map.fetch!(context, :value) end,
-        blank_space_char: " "
+        styler: fn context, _opts -> Map.fetch!(context, :value) end
       )
 
     case Table.Reader.init(tabular) do
       :none ->
         {:error,
-         ArgumentError.exception("expected valid tabular data, but got: #{inspect(tabular)}")}
+         ArgumentError.exception(
+           "expected valid tabular data, but got: #{Kernel.inspect(tabular)}"
+         )}
 
       {_reader_type, %{columns: []}, _enum} ->
         {:error,
-         ArgumentError.exception("expected non-empty tabular data, but got: #{inspect(tabular)}")}
+         ArgumentError.exception(
+           "expected non-empty tabular data, but got: #{Kernel.inspect(tabular)}"
+         )}
 
       {reader_type, %{columns: columns}, _enum} = reader ->
         custom_headers = Keyword.fetch!(opts, :headers)
@@ -116,6 +350,17 @@ defmodule TableKitty do
               render_by_columns(reader, columns, normalized_columns, opts)
           end
         end
+    end
+  end
+
+  @doc """
+  Same as `build/2`, but raises in case of error.
+  """
+  @spec build!(Table.Reader.t(), Keyword.t()) :: IO.chardata()
+  def build!(tabular, opts \\ []) do
+    case build(tabular, opts) do
+      {:ok, io_data} -> io_data
+      {:error, exception} -> raise exception
     end
   end
 
@@ -148,7 +393,7 @@ defmodule TableKitty do
             {:halt,
              {:error,
               ArgumentError.exception(
-                "a custom header should be converted into a valid string by the formatter, got: #{inspect(formatted)}"
+                "a custom header should be converted into a valid string by the formatter, got: #{Kernel.inspect(formatted)}"
               )}}
           end
         else
@@ -162,7 +407,7 @@ defmodule TableKitty do
             {:halt,
              {:error,
               ArgumentError.exception(
-                "a header should be converted into a valid string by the formatter, got: #{inspect(formatted)}"
+                "a header should be converted into a valid string by the formatter, got: #{Kernel.inspect(formatted)}"
               )}}
           end
         end
@@ -215,7 +460,7 @@ defmodule TableKitty do
 
     {normalized, max_column_lengths, _total_rows} =
       reader
-      |> Table.to_rows()
+      |> Table.to_rows(only: columns)
       |> Enum.reduce({[], max_lengths, 0}, fn row, {acc, current_max_acc, row_index} ->
         new_row_with_lengths =
           Map.new(row, fn {key, value} ->
@@ -231,7 +476,7 @@ defmodule TableKitty do
                 context =
                   Map.merge(
                     %{context | value: sub_str, meta: [:substring, :row_line]},
-                    %{row_line: index, before: value, formatted: formatted, length: len}
+                    %{row_line: index, original_value: value, formatted: formatted, length: len}
                   )
 
                 styled = styler.(context, opts)
@@ -311,7 +556,7 @@ defmodule TableKitty do
     ]
 
     outer_border = Keyword.fetch!(opts, :outer_border)
-    blk_char = Keyword.fetch!(opts, :blank_space_char)
+    blk_char = Keyword.fetch!(opts, :blank_space)
 
     title =
       if title_len > 0 do
@@ -382,15 +627,15 @@ defmodule TableKitty do
 
     align_content = Keyword.fetch!(opts, :align_content)
 
-    maybe_vertical_divisor =
-      if Keyword.fetch!(opts, :display_vertical_divisor) do
+    maybe_horizontal_divisor =
+      if Keyword.fetch!(opts, :display_horizontal_divisor) do
         [vertical_divisor, ?\n]
       else
         []
       end
 
     body =
-      Enum.map_intersperse(normalized, maybe_vertical_divisor, fn row ->
+      Enum.map_intersperse(normalized, maybe_horizontal_divisor, fn row ->
         for line <- row_lines(row) do
           [
             outer_border,
@@ -467,24 +712,24 @@ defmodule TableKitty do
          max_column_len,
          padding_left,
          padding_right,
-         blank_space_char,
+         blank_space,
          position
        ) do
     case position do
       :left ->
         [
-          List.duplicate(blank_space_char, padding_left),
+          List.duplicate(blank_space, padding_left),
           content,
-          List.duplicate(blank_space_char, max_column_len - len),
-          List.duplicate(blank_space_char, padding_right)
+          List.duplicate(blank_space, max_column_len - len),
+          List.duplicate(blank_space, padding_right)
         ]
 
       :right ->
         [
-          List.duplicate(blank_space_char, padding_left),
-          List.duplicate(blank_space_char, max_column_len - len),
+          List.duplicate(blank_space, padding_left),
+          List.duplicate(blank_space, max_column_len - len),
           content,
-          List.duplicate(blank_space_char, padding_right)
+          List.duplicate(blank_space, padding_right)
         ]
 
       :center ->
@@ -492,9 +737,9 @@ defmodule TableKitty do
         rest = rem(max_column_len - len, 2)
 
         [
-          List.duplicate(blank_space_char, padding_left + spacing),
+          List.duplicate(blank_space, padding_left + spacing),
           content,
-          List.duplicate(blank_space_char, padding_right + spacing + rest)
+          List.duplicate(blank_space, padding_right + spacing + rest)
         ]
     end
   end
@@ -507,5 +752,32 @@ defmodule TableKitty do
   defp render_by_columns(reader, columns, normalized_columns, opts) do
     # OPTIMIZE: implement the traverse by columns.
     render_by_rows(reader, columns, normalized_columns, opts)
+  end
+
+  @doc """
+  Prints the table if the same is valid.
+
+  To see all the options, go to `build/2`.
+
+  In case the tabular needs to be returned, use `TableKitty.inspect/2`.
+  """
+  @spec print(Table.Reader.t(), Keyword.t()) :: :ok | {:error, Exception.t()}
+  def print(tabular, opts \\ []) do
+    with {:ok, printable} <- build(tabular, opts) do
+      IO.puts(printable)
+    end
+  end
+
+  @doc """
+  Prints the tabular data and return itself.
+
+  In case of error, an exception will be raised.
+  To see all the options, go to `build/2`.
+  """
+  @spec inspect(Table.Reader.t(), Keyword.t()) :: Table.Reader.t()
+  def inspect(tabular, opts \\ []) do
+    io_data = build!(tabular, opts)
+    :ok = IO.puts(io_data)
+    tabular
   end
 end

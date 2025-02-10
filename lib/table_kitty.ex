@@ -460,7 +460,7 @@ defmodule TableKitty do
 
     {normalized, max_column_lengths, _total_rows} =
       reader
-      |> Table.to_rows()
+      |> Table.to_rows(only: columns)
       |> Enum.reduce({[], max_lengths, 0}, fn row, {acc, current_max_acc, row_index} ->
         new_row_with_lengths =
           Map.new(row, fn {key, value} ->

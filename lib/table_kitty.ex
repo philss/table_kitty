@@ -52,6 +52,8 @@ defmodule TableKitty do
       +-------------+------------------------+
       \"\"\"
 
+  This one is a "lighter" version of the above:
+
       iex> data = [city: ["Tokyo", "Delhi", "Shanghai", "São Paulo", "Mexico City"], pop: [37, 28, 25, 21, 21]]
       iex> io_data = TableKitty.build!(data, display_horizontal_divisor: false)
       iex> IO.iodata_to_binary(io_data)
@@ -69,19 +71,25 @@ defmodule TableKitty do
 
   It's possible to have a colorful output. For that, you will need a `styler`:
 
-      iex> styler = fn
-      ...>   %{context: :row, original_value: orig, value: value}, _opts when is_number(orig) ->
-      ...>     cond do
-      ...>       orig >= 30 -> IO.ANSI.format([:red, :bright, value])
-      ...>       orig >= 25 -> IO.ANSI.format([:yellow, :bright, value])
-      ...>       true -> IO.ANSI.format([:green, :bright, value])
-      ...>     end
-      ...>   context, _opts ->
-      ...>     context[:value]
-      ...> end
-      iex> data = [city: ["Tokyo", "Delhi", "Shanghai", "São Paulo", "Mexico City"], pop: [37, 28, 25, 21, 21]]
-      iex> io_data = TableKitty.build!(data, display_horizontal_divisor: false, styler: styler)
-      iex> IO.iodata_to_binary(io_data)
+      styler = fn
+        %{context: :row, original_value: orig, value: value}, _opts when is_number(orig) ->
+          color =
+            cond do
+              orig >= 30 -> :red
+              orig >= 25 -> :yellow
+              true -> :green
+            end
+
+          IO.ANSI.format([color, :bright, value])
+        context, _opts ->
+          context[:value]
+      end
+
+      data = [city: ["Tokyo", "Delhi", "Shanghai", "São Paulo", "Mexico City"], pop: [37, 28, 25, 21, 21]]
+      io_data = TableKitty.build!(data, display_horizontal_divisor: false, styler: styler)
+
+      \# Note that the output will depend on your terminal.
+      IO.iodata_to_binary(io_data)
       \"\"\"
       +-------------+-----+
       | city        | pop |
